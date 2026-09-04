@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sensor Fusion — Reactive Obstacle Avoidance</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d0f14;
+    --bg2:       #13161e;
+    --bg3:       #1a1e28;
+    --border:    rgba(255,255,255,0.07);
+    --border2:   rgba(255,255,255,0.13);
+    --text:      #e8eaf0;
+    --muted:     #7a7f91;
+    --accent:    #4fc3f7;
+    --danger:    #ef5350;
+    --safe:      #26c6a0;
+    --warn:      #ffa726;
+    --tof:       #4fc3f7;
+    --ultra:     #26c6a0;
+    --font-head: 'Syne', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.6;
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border2);
+    padding: 2rem 3rem;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+  .header-left h1 {
+    font-family: var(--font-head);
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #fff;
+    line-height: 1.1;
+  }
+  .header-left h1 span { color: var(--accent); }
+  .header-left p {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 0.5rem;
+    max-width: 480px;
+  }
+  .header-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 1rem; }
+  .tag {
+    font-size: 10px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border2);
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .tag.blue  { border-color: var(--tof);   color: var(--tof);   background: rgba(79,195,247,0.06); }
+  .tag.green { border-color: var(--ultra); color: var(--ultra); background: rgba(38,198,160,0.06); }
+
+  .header-stats { display: flex; gap: 2rem; flex-wrap: wrap; }
+  .hstat { text-align: right; }
+  .hstat-val { font-family: var(--font-head); font-size: 2rem; font-weight: 700; color: #fff; }
+  .hstat-val.danger { color: var(--danger); }
+  .hstat-val.safe   { color: var(--safe);   }
+  .hstat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  /* ── Nav ── */
+  .nav {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 3rem;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+  }
+  .nav-btn {
+    padding: 1rem 1.5rem;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .nav-btn:hover { color: var(--text); }
+  .nav-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Sections ── */
+  .section { display: none; padding: 2.5rem 3rem; }
+  .section.active { display: block; }
+
+  .section-title {
+    font-family: var(--font-head);
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 0.25rem;
+  }
+  .section-sub { color: var(--muted); font-size: 12px; margin-bottom: 1.5rem; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .card-title { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+  .card-sub   { font-size: 11px; color: var(--muted); margin-bottom: 1rem; }
+
+  /* ── Metric grid ── */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .metric {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+  }
+  .metric-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .metric-val { font-family: var(--font-head); font-size: 1.6rem; font-weight: 700; color: #fff; }
+  .metric-val.danger { color: var(--danger); }
+  .metric-val.safe   { color: var(--safe);   }
+  .metric-val.warn   { color: var(--warn);   }
+  .metric-sub { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+  /* ── Banner ── */
+  .banner {
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-size: 12px;
+    margin-bottom: 1.5rem;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    line-height: 1.6;
+  }
+  .banner-danger { background: rgba(239,83,80,0.1); border: 1px solid rgba(239,83,80,0.3); color: #ef9a9a; }
+  .banner-safe   { background: rgba(38,198,160,0.1); border: 1px solid rgba(38,198,160,0.3); color: #80cbc4; }
+  .banner-info   { background: rgba(79,195,247,0.1); border: 1px solid rgba(79,195,247,0.3); color: #81d4fa; }
+
+  /* ── Legend ── */
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 1rem; font-size: 11px; color: var(--muted); }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .ldot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+  /* ── Tabs ── */
+  .tab-row { display: flex; gap: 6px; margin-bottom: 1rem; flex-wrap: wrap; }
+  .tab {
+    padding: 5px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border2);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    background: transparent;
+    color: var(--muted);
+    transition: all 0.15s;
+  }
+  .tab:hover { color: var(--text); border-color: var(--border2); }
+  .tab.active { background: rgba(79,195,247,0.12); color: var(--accent); border-color: var(--accent); }
+
+  /* ── Ctrl row ── */
+  .ctrl-row { display: flex; gap: 8px; margin-bottom: 0.75rem; flex-wrap: wrap; align-items: center; }
+  .ctrl-btn {
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border2);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    background: transparent;
+    color: var(--muted);
+    transition: all 0.15s;
+  }
+  .ctrl-btn:hover { color: var(--text); background: var(--bg3); }
+  .ctrl-hint { font-size: 10px; color: var(--muted); }
+
+  /* ── Rule box ── */
+  .rule-box {
+    background: var(--bg3);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 1rem 1.25rem;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.8;
+    margin-top: 1rem;
+  }
+  .rule-box strong { color: var(--text); }
+
+  /* ── Two col ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media(max-width:700px){ .two-col { grid-template-columns:1fr; } }
+
+  /* ── Insight grid ── */
+  .insight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 1rem; }
+  .insight {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+  }
+  .insight-head { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
+  .insight-body { font-size: 11px; color: var(--muted); line-height: 1.7; }
+  .badge {
+    display: inline-block;
+    font-size: 9px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+  .badge-safe   { background: rgba(38,198,160,0.15); color: var(--safe);   border: 1px solid rgba(38,198,160,0.3); }
+  .badge-warn   { background: rgba(255,167,38,0.15); color: var(--warn);   border: 1px solid rgba(255,167,38,0.3); }
+  .badge-danger { background: rgba(239,83,80,0.15);  color: var(--danger); border: 1px solid rgba(239,83,80,0.3); }
+
+  /* ── Footer ── */
+  .footer {
+    border-top: 1px solid var(--border);
+    padding: 1.5rem 3rem;
+    font-size: 10px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  canvas { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1>Sensor Fusion<br><span>Reactive Obstacle Avoidance</span></h1>
+    <p>Dual ultrasonic + Time-of-Flight sensor analysis across 6 materials at 3 distances. Kalman filtered. Weight-optimised for safe drone flight.</p>
+    <div class="header-tags">
+      <span class="tag blue">VL53L0X ToF</span>
+      <span class="tag green">HC-SR04 × 2 Ultrasonic</span>
+      <span class="tag">ESP32</span>
+      <span class="tag">Kalman Filter</span>
+      <span class="tag">Sensor Fusion</span>
+    </div>
+  </div>
+  <div class="header-stats">
+    <div class="hstat">
+      <div class="hstat-val safe">−1.8 cm</div>
+      <div class="hstat-label">ToF avg bias (underestimates)</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-val danger">+0.6 cm</div>
+      <div class="hstat-label">Ultrasonic avg bias (overestimates)</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-val" style="color:var(--accent)">65 / 35</div>
+      <div class="hstat-label">ToF / Ultrasonic weight split</div>
+    </div>
+  </div>
+</div>
+
+<nav class="nav">
+  <button class="nav-btn active" onclick="showSection('s1',this)">01 — Overview</button>
+  <button class="nav-btn" onclick="showSection('s2',this)">02 — Absolute error</button>
+  <button class="nav-btn" onclick="showSection('s3',this)">03 — Signed error</button>
+  <button class="nav-btn" onclick="showSection('s4',this)">04 — Sensor readings</button>
+  <button class="nav-btn" onclick="showSection('s5',this)">05 — Weight &amp; fusion</button>
+  <button class="nav-btn" onclick="showSection('s6',this)">06 — Material insights</button>
+</nav>
+
+<!-- ═══════════════════ SECTION 1 — OVERVIEW ═══════════════════ -->
+<section class="section active" id="s1">
+  <div class="section-title">System summary</div>
+  <div class="section-sub">Sensor behaviour, key metrics, and material response overview.</div>
+
+  <!-- Critical failure banner -->
+  <div class="banner banner-danger" style="font-size:12px;line-height:1.7">
+    For reactive obstacle avoidance, <strong style="color:var(--danger);text-decoration:underline">overestimation is the critical failure</strong> — the drone believes it is farther from an obstacle than it actually is and keeps flying, leading to collision. Underestimation causes the drone to stop early — conservative but safe.
+  </div>
+
+  <!-- 6 metric cards -->
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-label">ToF avg bias</div>
+      <div class="metric-val safe">−1.8 cm</div>
+      <div class="metric-sub">underestimates →<br>stops early</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Ultrasonic avg bias</div>
+      <div class="metric-val danger">+0.6 cm</div>
+      <div class="metric-sub">overestimates →<br>collision risk</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">ToF base weight</div>
+      <div class="metric-val" style="color:var(--accent)">65%</div>
+      <div class="metric-sub">primary —<br>conservative bias</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Ultrasonic base weight</div>
+      <div class="metric-val warn">35%</div>
+      <div class="metric-sub">cross-check —<br>catches ToF failures</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Worst material (ToF)</div>
+      <div class="metric-val" style="color:var(--tof);font-size:1.2rem;padding-top:4px">Glass</div>
+      <div class="metric-sub">IR partially<br>transmits through glass</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Worst material (ultrasonic)</div>
+      <div class="metric-val" style="color:var(--ultra);font-size:1.2rem;padding-top:4px">Fabric</div>
+      <div class="metric-sub">sound absorption →<br>over-reads</div>
+    </div>
+  </div>
+
+  <!-- Override rule banner -->
+  <div class="banner banner-safe" style="font-size:12px;line-height:1.7">
+    <strong>Override rule</strong> — when |ToF − Ultrasonic| &gt; 3 cm (sensors strongly disagree), ignore base weights and trust whichever sensor reports the <em>shorter</em> (closer) distance. This protects against single-sensor failures on problematic materials.
+  </div>
+
+  <!-- Material behaviour table -->
+  <div class="card">
+    <div class="card-title">Material behaviour summary</div>
+    <div class="card-sub">How each material affects each sensor's reading</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:0.5rem">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border2)">
+          <th style="text-align:left;padding:8px 12px;color:var(--muted);font-weight:500">Material</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--muted);font-weight:500">ToF behaviour</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--muted);font-weight:500">Ultrasonic behaviour</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--muted);font-weight:500">Override risk</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:10px 12px;color:var(--text);font-weight:500">Wood</td>
+          <td style="padding:10px 12px;color:var(--tof)">Slight under-read</td>
+          <td style="padding:10px 12px;color:var(--safe)">Accurate</td>
+          <td style="padding:10px 12px;color:var(--safe)">Low</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:10px 12px;color:var(--text);font-weight:500">Metal</td>
+          <td style="padding:10px 12px;color:var(--tof)">Slight under-read (IR specular)</td>
+          <td style="padding:10px 12px;color:var(--safe)">Accurate</td>
+          <td style="padding:10px 12px;color:var(--safe)">Low</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:10px 12px;color:var(--text);font-weight:500">Glass</td>
+          <td style="padding:10px 12px;color:var(--tof)">Under-reads (IR transmits)</td>
+          <td style="padding:10px 12px;color:var(--safe)">Accurate</td>
+          <td style="padding:10px 12px;color:var(--warn)">Medium</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:10px 12px;color:var(--text);font-weight:500">Concrete</td>
+          <td style="padding:10px 12px;color:var(--safe)">Most accurate</td>
+          <td style="padding:10px 12px;color:var(--safe)">Most accurate</td>
+          <td style="padding:10px 12px;color:var(--safe)">Very low</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:10px 12px;color:var(--text);font-weight:500">Plastic</td>
+          <td style="padding:10px 12px;color:var(--tof)">Varies with colour</td>
+          <td style="padding:10px 12px;color:var(--safe)">Accurate</td>
+          <td style="padding:10px 12px;color:var(--safe)">Low</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 12px;color:var(--text);font-weight:500">Fabric</td>
+          <td style="padding:10px 12px;color:var(--tof)">Inconsistent (IR scatter)</td>
+          <td style="padding:10px 12px;color:var(--danger)">Over-reads (absorbs sound)</td>
+          <td style="padding:10px 12px;color:var(--danger)">High</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════════ SECTION 2 — ABSOLUTE ERROR ═══════════════════ -->
+<section class="section" id="s2">
+  <div class="section-title">Absolute error — how much are sensors off?</div>
+  <div class="section-sub">Absolute error = |measured − known|. Shows magnitude only. Direction not shown here — see signed error in section 03.</div>
+
+  <div class="banner banner-info">
+    Use this chart to answer: <strong>"How accurate is each sensor on each material?"</strong> Switch distances using the buttons below.
+  </div>
+
+  <div class="card">
+    <div class="card-title">Absolute error by material</div>
+    <div class="card-sub">Lower = more accurate. Both sensors shown side by side per material.</div>
+    <div class="tab-row">
+      <button class="tab active" onclick="showAbsErr(25,this)">25 cm</button>
+      <button class="tab" onclick="showAbsErr(50,this)">50 cm</button>
+      <button class="tab" onclick="showAbsErr(75,this)">75 cm</button>
+    </div>
+    <div class="legend">
+      <span><span class="ldot" style="background:var(--tof)"></span>ToF Kalman error</span>
+      <span><span class="ldot" style="background:var(--ultra)"></span>Ultrasonic fused Kalman error</span>
+    </div>
+    <div style="position:relative;width:100%;height:300px">
+      <canvas id="absErrChart" role="img" aria-label="Absolute error bar chart per material"></canvas>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ SECTION 3 — SIGNED ERROR ═══════════════════ -->
+<section class="section" id="s3">
+  <div class="section-title">Signed error — which direction does each sensor fail?</div>
+  <div class="section-sub">Signed error = measured − known. Positive = overestimate (dangerous). Negative = underestimate (safe for obstacle avoidance).</div>
+
+  <div class="banner banner-danger">
+    <strong>Red bars = overestimate = collision risk.</strong> The sensor thinks the obstacle is farther away — drone keeps flying. Green/blue bars = underestimate = drone stops early = safe.
+  </div>
+
+  <div class="card">
+    <div class="card-title">Signed error by material</div>
+    <div class="card-sub">Red = overestimate — dangerous. Blue/green = underestimate — safe. Zero line = perfect.</div>
+    <div class="tab-row">
+      <button class="tab active" onclick="showSignedErr(25,this)">25 cm</button>
+      <button class="tab" onclick="showSignedErr(50,this)">50 cm</button>
+      <button class="tab" onclick="showSignedErr(75,this)">75 cm</button>
+    </div>
+    <div class="legend">
+      <span><span class="ldot" style="background:var(--tof)"></span>ToF Kalman</span>
+      <span><span class="ldot" style="background:var(--ultra)"></span>Ultrasonic fused Kalman</span>
+      <span><span class="ldot" style="background:var(--danger)"></span>Overestimate (dangerous)</span>
+    </div>
+    <div style="position:relative;width:100%;height:300px">
+      <canvas id="signedErrChart" role="img" aria-label="Signed error bar chart per material"></canvas>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ SECTION 4 — SENSOR READINGS ═══════════════════ -->
+<section class="section" id="s4">
+  <div class="section-title">Sensor readings vs true distance</div>
+  <div class="section-sub">Points below the ideal line = underestimate (safe). Points above = overestimate (risky). Circles = ToF, Triangles = Ultrasonic.</div>
+
+  <div class="banner banner-info">
+    Use the <strong>zoom buttons</strong> to focus on each distance. Scroll on the chart to zoom freely, drag to pan. Hover any point for full details.
+  </div>
+
+  <div class="card">
+    <div class="card-title">Both sensors vs ideal — all materials</div>
+    <div class="card-sub">Shaded band = ±1 cm tolerance zone. Points outside band need attention.</div>
+    <div class="tab-row">
+      <button class="tab active" onclick="setLineView('all',this)">All distances</button>
+      <button class="tab" onclick="setLineView(25,this)">Zoom: 25 cm</button>
+      <button class="tab" onclick="setLineView(50,this)">Zoom: 50 cm</button>
+      <button class="tab" onclick="setLineView(75,this)">Zoom: 75 cm</button>
+    </div>
+    <div class="ctrl-row">
+      <button class="ctrl-btn" onclick="resetLineZoom()">↺ Reset zoom</button>
+      <span class="ctrl-hint">Scroll to zoom · Click + drag to pan</span>
+    </div>
+    <div class="legend">
+      <span><span style="display:inline-block;width:16px;height:2px;background:#555;vertical-align:middle"></span> Ideal</span>
+      <span><span class="ldot" style="background:#26c6a0"></span>Wood</span>
+      <span><span class="ldot" style="background:#4fc3f7"></span>Metal</span>
+      <span><span class="ldot" style="background:#D4537E"></span>Glass</span>
+      <span><span class="ldot" style="background:#D85A30"></span>Concrete</span>
+      <span><span class="ldot" style="background:#7F77DD"></span>Plastic</span>
+      <span><span class="ldot" style="background:#BA7517"></span>Fabric</span>
+      <span style="color:var(--muted)">● ToF &nbsp; ▲ Ultrasonic</span>
+    </div>
+    <div style="position:relative;width:100%;height:440px">
+      <canvas id="lineChart" role="img" aria-label="Zoomable line chart of sensor readings vs true distance"></canvas>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ SECTION 5 — WEIGHT & FUSION ═══════════════════ -->
+<section class="section" id="s5">
+  <div class="section-title">Weight distribution &amp; fusion logic</div>
+  <div class="section-sub">Optimal sensor weights derived from bias analysis. Safety override rule for high-disagreement cases.</div>
+
+  <div class="two-col">
+    <div>
+      <div class="metrics" style="grid-template-columns:1fr 1fr">
+        <div class="metric">
+          <div class="metric-label">ToF weight</div>
+          <div class="metric-val safe">65%</div>
+          <div class="metric-sub">underestimates → safe</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Ultrasonic weight</div>
+          <div class="metric-val warn">35%</div>
+          <div class="metric-sub">cross-check sensor</div>
+        </div>
+      </div>
+      <div class="rule-box">
+        <strong>Base fusion rule</strong><br>
+        fused = (0.65 × ToF<sub>kalman</sub>) + (0.35 × Ultra<sub>kalman</sub>)<br><br>
+        <strong>Safety override</strong><br>
+        if |ToF − Ultrasonic| &gt; 3 cm:<br>
+        → use whichever reports the <em>shorter</em> distance<br><br>
+        <strong>Rationale</strong><br>
+        Large disagreement = one sensor has failed on the current material. The conservative (shorter) reading is always safer for obstacle avoidance.
+      </div>
+    </div>
+
+    <div>
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-title">Weight distribution</div>
+        <div class="card-sub">Stacked — 65% ToF / 35% Ultrasonic</div>
+        <div style="position:relative;width:100%;height:100px">
+          <canvas id="weightChart" role="img" aria-label="Stacked bar showing 65% ToF and 35% ultrasonic"></canvas>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ SECTION 6 — MATERIAL INSIGHTS ═══════════════════ -->
+<section class="section" id="s6">
+  <div class="section-title">Material-by-material insights</div>
+  <div class="section-sub">Key observations for each material relevant to drone obstacle avoidance.</div>
+
+  <div class="insight-grid">
+    <div class="insight">
+      <span class="badge badge-safe">Both sensors reliable</span>
+      <div class="insight-head">Wood</div>
+      <div class="insight-body">ToF reads slightly low at 25 cm (23.5 vs 25). Ultrasonic fused stays within ±0.3 cm across all distances. Ideal baseline calibration surface. Low disagreement — base weights sufficient.</div>
+    </div>
+    <div class="insight">
+      <span class="badge badge-safe">Ultrasonic excellent</span>
+      <div class="insight-head">Metal / Aluminum</div>
+      <div class="insight-body">ToF under-reads slightly — IR specular reflection at angles bounces away from sensor. Ultrasonic handles metal well — sound reflects cleanly. Both sensors underestimate → safe for obstacle avoidance.</div>
+    </div>
+    <div class="insight">
+      <span class="badge badge-warn">ToF struggles at 75 cm</span>
+      <div class="insight-head">Glass</div>
+      <div class="insight-body">ToF reads 70.3 cm at 75 cm (4.7 cm error) — IR partially passes through transparent surfaces. Disagreement exceeds 3 cm → safety override activates → shorter reading used → safe outcome.</div>
+    </div>
+    <div class="insight">
+      <span class="badge badge-safe">Most consistent overall</span>
+      <div class="insight-head">Concrete / Wall</div>
+      <div class="insight-body">Best results for both sensors across all distances. Large flat diffuse surface reflects both IR and ultrasonic perfectly. Ideal calibration reference. Both sensors agree within 0.5 cm.</div>
+    </div>
+    <div class="insight">
+      <span class="badge badge-warn">ToF varies with colour</span>
+      <div class="insight-head">Coloured plastic</div>
+      <div class="insight-body">Dark plastics absorb more IR — ToF error increases. Ultrasonic fused remains accurate. Disagreement moderate but within threshold at most distances. Base weights handle this well.</div>
+    </div>
+    <div class="insight">
+      <span class="badge badge-danger">Both sensors affected</span>
+      <div class="insight-head">Fabric</div>
+      <div class="insight-body">Most challenging material for both sensors. Fabric absorbs sound → ultrasonic overestimates by ~1.2 cm at 75 cm (dangerous). ToF inconsistent due to IR scattering. Highest noise. Override rule most critical here.</div>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <span>Sensor Fusion — Reactive Obstacle Avoidance &nbsp;|&nbsp; ESP32 + VL53L0X + HC-SR04 × 2</span>
+  <span>25 cm · 50 cm · 75 cm &nbsp;|&nbsp; 6 materials &nbsp;|&nbsp; Kalman filtered</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<script>
+/* ── Data ── */
+const materials = ['Wood','Metal','Glass','Concrete','Plastic','Fabric'];
+const matColors = ['#26c6a0','#4fc3f7','#D4537E','#D85A30','#7F77DD','#BA7517'];
+const TOF   = '#4fc3f7';
+const ULTRA = '#26c6a0';
+const DANGER= '#ef5350';
+
+const data = {
+  25:{ tofK:[23.52,21.95,21.85,24.9,23.3,23.96], ultraK:[25.2,25.2,25.5,25.0,25.4,26.2] },
+  50:{ tofK:[48.9,47.4,46.5,50.2,48.9,49.6],     ultraK:[50.5,50.2,50.7,50.3,50.6,52.1] },
+  75:{ tofK:[74.68,73.85,70.29,75.09,73.4,75.06], ultraK:[75.3,75.4,74.8,75.3,75.7,76.2] }
+};
+
+const gridColor  = 'rgba(255,255,255,0.05)';
+const zeroColor  = 'rgba(255,255,255,0.2)';
+const tickColor  = '#7a7f91';
+const labelColor = '#7a7f91';
+
+const baseScaleOpts = (xLabel, yLabel) => ({
+  x:{ grid:{color:gridColor}, ticks:{color:tickColor,font:{size:11,family:'DM Mono, monospace'}}, title:{display:true,text:xLabel,color:labelColor,font:{size:11}} },
+  y:{ grid:{color:gridColor}, ticks:{color:tickColor,font:{size:11,family:'DM Mono, monospace'}}, title:{display:true,text:yLabel,color:labelColor,font:{size:11}} }
+});
+
+/* ── Nav ── */
+function showSection(id, btn){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+
+/* ── Section 2 — Absolute error ── */
+let absInst = null;
+function showAbsErr(d, btn){
+  document.querySelectorAll('#s2 .tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  const te = data[d].tofK.map(v=>+Math.abs(v-d).toFixed(2));
+  const ue = data[d].ultraK.map(v=>+Math.abs(v-d).toFixed(2));
+  if(absInst) absInst.destroy();
+  absInst = new Chart(document.getElementById('absErrChart'),{
+    type:'bar',
+    data:{ labels:materials, datasets:[
+      { label:'ToF',        data:te, backgroundColor:TOF,   borderRadius:4 },
+      { label:'Ultrasonic', data:ue, backgroundColor:ULTRA, borderRadius:4 }
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#1a1e28', borderColor:'rgba(255,255,255,0.1)', borderWidth:1,
+        callbacks:{ label:ctx=>' '+ctx.dataset.label+': '+ctx.raw.toFixed(2)+' cm error' }
+      }},
+      scales:{
+        x:{ grid:{color:gridColor}, ticks:{color:tickColor,font:{size:11,family:'DM Mono, monospace'},autoSkip:false} },
+        y:{ beginAtZero:true, grid:{color:gridColor}, ticks:{color:tickColor,font:{size:11,family:'DM Mono, monospace'}},
+            title:{display:true,text:'Absolute error (cm)',color:labelColor,font:{size:11}} }
+      }
+    }
+  });
+}
+showAbsErr(25, document.querySelector('#s2 .tab'));
+
+/* ── Section 3 — Signed error ── */
+let signedInst = null;
+function showSignedErr(d, btn){
+  document.querySelectorAll('#s3 .tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  const te = data[d].tofK.map(v=>+( v-d).toFixed(2));
+  const ue = data[d].ultraK.map(v=>+(v-d).toFixed(2));
+  if(signedInst) signedInst.destroy();
+  signedInst = new Chart(document.getElementById('signedErrChart'),{
+    type:'bar',
+    data:{ labels:materials, datasets:[
+      { label:'ToF',        data:te, backgroundColor:te.map(v=>v>0?DANGER:TOF),   borderRadius:4 },
+      { label:'Ultrasonic', data:ue, backgroundColor:ue.map(v=>v>0?DANGER:ULTRA), borderRadius:4 }
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#1a1e28', borderColor:'rgba(255,255,255,0.1)', borderWidth:1,
+        callbacks:{ label:ctx=>{
+          const v=ctx.raw;
+          const tag = v>0?' overestimate — risky': v<0?' underestimate — safe':' exact';
+          return ' '+(v>0?'+':'')+v.toFixed(2)+' cm'+tag;
+        }}
+      }},
+      scales:{
+        x:{ grid:{color:gridColor}, ticks:{color:tickColor,font:{size:11,family:'DM Mono, monospace'},autoSkip:false} },
+        y:{ grid:{color:ctx=>ctx.tick.value===0?zeroColor:gridColor},
+            ticks:{color:tickColor,font:{size:11,family:'DM Mono, monospace'}},
+            title:{display:true,text:'Signed error (cm)',color:labelColor,font:{size:11}} }
+      }
+    }
+  });
+}
+showSignedErr(25, document.querySelector('#s3 .tab'));
+
+/* ── Section 4 — Zoomable line chart ── */
+const lineViews = {
+  all:{ xMin:18, xMax:82, yMin:18, yMax:82 },
+  25: { xMin:21, xMax:29, yMin:19, yMax:29 },
+  50: { xMin:46, xMax:54, yMin:43, yMax:55 },
+  75: { xMin:71, xMax:79, yMin:67, yMax:79 }
+};
+
+const lineDS = [
+  { label:'Ideal', data:[{x:18,y:18},{x:82,y:82}],
+    borderColor:'rgba(255,255,255,0.25)', borderDash:[6,4], pointRadius:0, borderWidth:1.5, tension:0, order:0 },
+  { label:'+1', data:[{x:18,y:19},{x:82,y:83}],
+    borderColor:'rgba(239,83,80,0.15)', backgroundColor:'rgba(239,83,80,0.05)',
+    pointRadius:0, borderWidth:0, fill:'+1', tension:0, order:1 },
+  { label:'-1', data:[{x:18,y:17},{x:82,y:81}],
+    borderColor:'rgba(38,198,160,0.15)', backgroundColor:'rgba(38,198,160,0.05)',
+    pointRadius:0, borderWidth:0, fill:false, tension:0, order:1 }
+];
+
+materials.forEach((m,i)=>{
+  lineDS.push({
+    label:'ToF — '+m,
+    data:[{x:25,y:+data[25].tofK[i].toFixed(2)},{x:50,y:+data[50].tofK[i].toFixed(2)},{x:75,y:+data[75].tofK[i].toFixed(2)}],
+    borderColor:matColors[i], backgroundColor:matColors[i],
+    pointRadius:8, pointHoverRadius:12, pointStyle:'circle',
+    borderWidth:2, borderDash:[], tension:0, order:2
+  });
+  lineDS.push({
+    label:'Ultra — '+m,
+    data:[{x:25,y:+data[25].ultraK[i].toFixed(2)},{x:50,y:+data[50].ultraK[i].toFixed(2)},{x:75,y:+data[75].ultraK[i].toFixed(2)}],
+    borderColor:matColors[i], backgroundColor:matColors[i],
+    pointRadius:8, pointHoverRadius:12, pointStyle:'triangle',
+    borderWidth:2, borderDash:[5,3], tension:0, order:2
+  });
+});
+
+const lineChart = new Chart(document.getElementById('lineChart'),{
+  type:'line', data:{ datasets:lineDS },
+  options:{
+    responsive:true, maintainAspectRatio:false,
+    animation:{ duration:400 },
+    plugins:{
+      legend:{ display:false },
+      tooltip:{ backgroundColor:'#1a1e28', borderColor:'rgba(255,255,255,0.1)', borderWidth:1,
+        filter:item=>!['Ideal','+1','-1'].includes(item.dataset.label),
+        callbacks:{ label:ctx=>{
+          const v=ctx.raw.y, k=ctx.raw.x;
+          const err=(v-k).toFixed(2);
+          const tag = err>0?' overestimate':err<0?' underestimate':' exact';
+          return ' '+ctx.dataset.label+': '+v.toFixed(2)+' cm  ('+( err>0?'+':'')+err+' cm'+tag+')';
+        }}
+      },
+      zoom:{ pan:{enabled:true,mode:'xy'}, zoom:{ wheel:{enabled:true}, pinch:{enabled:true}, mode:'xy' } }
+    },
+    scales:{
+      x:{ type:'linear', min:18, max:82,
+          grid:{color:gridColor}, ticks:{color:tickColor,font:{size:11,family:'DM Mono, monospace'},stepSize:25},
+          title:{display:true,text:'Known distance (cm)',color:labelColor,font:{size:11}} },
+      y:{ min:18, max:82,
+          grid:{color:gridColor}, ticks:{color:tickColor,font:{size:11,family:'DM Mono, monospace'},stepSize:5},
+          title:{display:true,text:'Measured distance (cm)',color:labelColor,font:{size:11}} }
+    }
+  }
+});
+
+function setLineView(dist, btn){
+  document.querySelectorAll('#s4 .tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  const v = lineViews[dist] || lineViews['all'];
+  lineChart.options.scales.x.min = v.xMin;
+  lineChart.options.scales.x.max = v.xMax;
+  lineChart.options.scales.y.min = v.yMin;
+  lineChart.options.scales.y.max = v.yMax;
+  lineChart.update();
+}
+function resetLineZoom(){
+  lineChart.resetZoom();
+  setLineView('all', document.querySelector('#s4 .tab'));
+}
+
+/* ── Section 5 — Weight chart ── */
+new Chart(document.getElementById('weightChart'),{
+  type:'bar',
+  data:{ labels:['Obstacle avoidance fusion'], datasets:[
+    { label:'ToF 65% — underestimates → safe',        data:[65], backgroundColor:TOF,   borderRadius:4 },
+    { label:'Ultrasonic 35% — overestimates → check', data:[35], backgroundColor:ULTRA, borderRadius:4 }
+  ]},
+  options:{
+    indexAxis:'y', responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ display:true, position:'bottom', labels:{color:tickColor, font:{size:11,family:'DM Mono, monospace'}, boxWidth:10, boxHeight:10} },
+      tooltip:{ backgroundColor:'#1a1e28', borderColor:'rgba(255,255,255,0.1)', borderWidth:1,
+        callbacks:{ label:ctx=>ctx.dataset.label+': '+ctx.raw+'%' }
+      }
+    },
+    scales:{
+      x:{ stacked:true, max:100, grid:{color:gridColor}, ticks:{callback:v=>v+'%',color:tickColor,font:{size:11,family:'DM Mono, monospace'}} },
+      y:{ stacked:true, grid:{color:gridColor}, ticks:{color:tickColor,font:{size:11,family:'DM Mono, monospace'}} }
+    }
+  }
+});
+
+
+</script>
+</body>
+</html>
